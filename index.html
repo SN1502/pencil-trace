@@ -1,0 +1,1576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Upload a photo of a person and watch their outline get sketched in pencil, then save the drawing as a video. Runs entirely in your browser.">
+<meta name="robots" content="noindex">
+<title>Pencil Trace</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+html{color-scheme:light}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<style>
+/* Layout: a drafting bench. The sheet lies on a gridded cutting mat on the left,
+   a narrow rail of instruments sits on the right; on a phone the rail drops below the sheet. */
+:root{
+  --desk:#e4e8eb;
+  --mat:#d8dee2;
+  --mat-line:#c6ced4;
+  --panel:#f5f6f7;
+  --rule:#cbd2d8;
+  --ink:#1b2026;
+  --muted:#56616b;
+  --pencil:#f2b62b;
+  --on-pencil:#2c2000;
+  --eraser:#c2405a;
+  --focus:#1f5fbf;
+  --sheet-shadow:0 1px 0 rgba(20,30,40,.10), 0 22px 44px -20px rgba(20,30,40,.55);
+  --display:"Bricolage Grotesque","Avenir Next","Segoe UI",sans-serif;
+  --body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --desk:#13161a; --mat:#1a1e23; --mat-line:#262c33; --panel:#1d2228; --rule:#323a43;
+    --ink:#e9ecef; --muted:#9aa5b0; --pencil:#f2b62b; --on-pencil:#2c2000; --eraser:#f0738b; --focus:#8ab4ff;
+    --sheet-shadow:0 1px 0 rgba(0,0,0,.5), 0 22px 44px -20px rgba(0,0,0,.9);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --desk:#13161a; --mat:#1a1e23; --mat-line:#262c33; --panel:#1d2228; --rule:#323a43;
+  --ink:#e9ecef; --muted:#9aa5b0; --pencil:#f2b62b; --on-pencil:#2c2000; --eraser:#f0738b; --focus:#8ab4ff;
+  --sheet-shadow:0 1px 0 rgba(0,0,0,.5), 0 22px 44px -20px rgba(0,0,0,.9);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{background:var(--desk);color:var(--ink);font-family:var(--body);font-size:14.5px;line-height:1.5}
+.app{max-width:1180px;margin-inline:auto;padding-inline:clamp(16px,3vw,32px);padding-block:22px 44px;display:flex;flex-direction:column;gap:20px}
+
+.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 20px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand svg{width:26px;height:26px;flex:none}
+h1{font-family:var(--display);font-weight:700;font-size:28px;line-height:1.1;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.lede{margin:0;color:var(--muted);max-width:62ch;min-width:0}
+
+.bench{display:grid;grid-template-columns:minmax(0,1fr) 324px;gap:22px;align-items:start}
+@media (max-width:880px){.bench{grid-template-columns:minmax(0,1fr)}}
+
+/* stage */
+.stage{min-width:0;display:flex;flex-direction:column;gap:12px}
+.mat{position:relative;display:grid;place-items:center;padding:clamp(14px,3.2vw,30px);border-radius:10px;
+  background:
+    linear-gradient(var(--mat-line) 1px,transparent 1px) 0 0/24px 24px,
+    linear-gradient(90deg,var(--mat-line) 1px,transparent 1px) 0 0/24px 24px,
+    var(--mat);
+  min-height:260px}
+.mat.over{outline:2px dashed var(--focus);outline-offset:-8px}
+#view{display:block;max-width:100%;max-height:min(74vh,780px);width:auto;height:auto;border-radius:2px;box-shadow:var(--sheet-shadow);background:var(--panel)}
+.bigplay{position:absolute;left:50%;bottom:clamp(26px,6vw,52px);transform:translateX(-50%);
+  display:inline-flex;align-items:center;gap:9px;padding:11px 20px 11px 16px;border:0;border-radius:999px;cursor:pointer;
+  background:var(--pencil);color:var(--on-pencil);font:600 15px/1 var(--body);box-shadow:0 8px 22px -8px rgba(0,0,0,.55);white-space:nowrap}
+.bigplay svg{width:16px;height:16px}
+.bigplay:hover{filter:brightness(1.05)}
+.veil{position:absolute;inset:0;display:grid;place-items:center;border-radius:10px;background:color-mix(in srgb,var(--mat) 82%,transparent);
+  font:500 15px var(--body);color:var(--ink);text-align:center;padding:16px;pointer-events:none}
+.veil span{background:var(--panel);border:1px solid var(--rule);border-radius:999px;padding:8px 16px}
+
+.transport{display:flex;align-items:center;gap:10px}
+.round{flex:none;width:42px;height:42px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;background:var(--pencil);color:var(--on-pencil)}
+.round.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
+.round svg{width:17px;height:17px}
+.round:disabled,.btn:disabled{opacity:.45;cursor:not-allowed}
+#seek{flex:1;min-width:0;accent-color:var(--pencil)}
+.clock{flex:none;font:500 12.5px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.meta{margin:0;font:400 12px var(--mono);color:var(--muted);min-height:1.5em}
+
+/* rail */
+.rail{min-width:0;background:var(--panel);border:1px solid var(--rule);border-radius:10px}
+.group{padding:16px 16px 18px;display:flex;flex-direction:column;gap:12px}
+.group + .group{border-top:1px solid var(--rule)}
+.group h2{margin:0;font:500 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.field-head label,.field-head .lab{font-weight:500;font-size:13.5px}
+.field-head output{font:500 12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--pencil);margin:0}
+.hint{margin:0;font-size:12.5px;color:var(--muted)}
+
+.photo{display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px;align-items:center}
+#thumb{width:64px;height:80px;object-fit:cover;border-radius:4px;border:1px solid var(--rule);background:var(--mat);display:block}
+.photo-name{margin:0;font-weight:500;font-size:13.5px;overflow-wrap:anywhere}
+.tag{display:inline-block;font:500 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--rule);border-radius:999px;padding:1px 7px;color:var(--muted);margin-top:3px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:10px 14px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--rule);background:transparent;color:var(--ink);font:600 14px/1.2 var(--body);text-align:center}
+.btn:hover:not(:disabled){border-color:var(--muted)}
+.btn.primary{background:var(--pencil);border-color:var(--pencil);color:var(--on-pencil)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.05);border-color:var(--pencil)}
+.btn svg{width:16px;height:16px;flex:none}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.btn:focus-within,.btn:focus-visible,.round:focus-visible,.bigplay:focus-visible,input[type=range]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.seg label{position:relative;min-width:0}
+.seg span{display:block;padding:7px 6px;text-align:center;font-size:13px;font-weight:500;cursor:pointer;color:var(--muted)}
+.seg label + label span{border-left:1px solid var(--rule)}
+.seg input:checked + span{background:var(--ink);color:var(--panel)}
+.seg input:focus-visible + span{outline:2px solid var(--focus);outline-offset:-2px}
+
+.tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tools label{position:relative;min-width:0}
+.tools .card{display:flex;flex-direction:column;gap:5px;padding:6px 6px 7px;border:1px solid var(--rule);border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;text-align:center}
+.tools svg{display:block;width:100%;height:34px;border-radius:4px}
+.tools input:checked + .card{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.tools input:focus-visible + .card{outline:2px solid var(--focus);outline-offset:2px}
+
+.check{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:500;cursor:pointer}
+.check input{width:17px;height:17px;accent-color:var(--pencil);margin:0}
+
+.rec{display:flex;flex-direction:column;gap:8px}
+.bar{height:6px;border-radius:999px;background:var(--mat);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--eraser)}
+.rec-line{display:flex;align-items:center;gap:8px;font:500 12.5px var(--mono);color:var(--ink)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--eraser);flex:none;animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+#clip{width:100%;border-radius:6px;border:1px solid var(--rule);background:var(--mat);display:block}
+.msg{margin:0;font-size:13px;color:var(--muted)}
+.msg.bad{color:var(--eraser)}
+.stack{display:flex;flex-direction:column;gap:8px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 26 26" aria-hidden="true">
+        <path d="M3 23l1.6-6.2L17.8 3.6a2 2 0 0 1 2.8 0l1.8 1.8a2 2 0 0 1 0 2.8L9.2 21.4 3 23z" fill="var(--pencil)" stroke="var(--ink)" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M4.6 16.8l4.6 4.6M15.6 5.8l4.6 4.6" fill="none" stroke="var(--ink)" stroke-width="1.6"/>
+        <path d="M3 23l.9-3.4 2.5 2.5z" fill="var(--ink)"/>
+      </svg>
+      <h1>Pencil Trace</h1>
+    </div>
+    <p class="lede">Upload a photo of a person and watch their outline get sketched in pencil, without the background, then save the drawing as a video. Everything runs in your browser, so the photo never leaves your device.</p>
+  </header>
+
+  <main class="bench">
+    <section class="stage" aria-label="Drawing">
+      <div class="mat" id="mat">
+        <canvas id="view" width="960" height="1200" role="img" aria-label="Pencil sketch of the photo"></canvas>
+        <button class="bigplay" id="bigplay" type="button">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.8v12.4L14 8z" fill="currentColor"/></svg>
+          <span id="bigplayText">Watch it draw</span>
+        </button>
+        <div class="veil" id="veil" hidden><span id="veilText">Tracing lines…</span></div>
+      </div>
+      <div class="transport">
+        <button class="round" id="play" type="button" aria-label="Play">
+          <svg id="icoPlay" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 1.8v12.4L14 8z" fill="currentColor"/></svg>
+          <svg id="icoPause" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M3 2h3.6v12H3zM9.4 2H13v12H9.4z" fill="currentColor"/></svg>
+        </button>
+        <button class="round ghost" id="restart" type="button" aria-label="Start again from a blank sheet">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2v12M14 2.2v11.6L5.5 8z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        </button>
+        <input type="range" id="seek" min="0" max="1000" step="1" value="1000" aria-label="Position in the drawing">
+        <output class="clock" id="clock" for="seek">0:18 / 0:18</output>
+      </div>
+      <p class="meta" id="meta" aria-live="polite"></p>
+    </section>
+
+    <aside class="rail" id="rail" aria-label="Settings">
+      <section class="group">
+        <h2>Photo</h2>
+        <div class="photo">
+          <canvas id="thumb" width="128" height="160" aria-hidden="true"></canvas>
+          <div>
+            <p class="photo-name" id="photoName">Sample portrait</p>
+            <span class="tag" id="photoTag">Example</span>
+          </div>
+        </div>
+        <label class="btn primary">
+          <input class="vh" type="file" id="file" accept="image/*">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11V2.5M4.5 6L8 2.5 11.5 6M2.5 10.5v3h11v-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Choose your photo
+        </label>
+        <p class="hint">You can also drag a photo onto the sheet or paste one. A clear, well-lit photo with the whole person in view works best.</p>
+        <p class="msg bad" id="photoMsg" role="alert" hidden></p>
+      </section>
+
+      <section class="group">
+        <h2>Sketch</h2>
+        <div class="field">
+          <div class="field-head"><span class="lab" id="subjectLab">Draw</span></div>
+          <div class="seg" role="radiogroup" aria-labelledby="subjectLab">
+            <label><input class="vh" type="radio" name="subject" id="subjectPerson" value="person" checked><span>Person only</span></label>
+            <label><input class="vh" type="radio" name="subject" id="subjectAll" value="all"><span>Whole photo</span></label>
+          </div>
+          <p class="msg" id="subjectMsg" role="status" hidden></p>
+        </div>
+        <div class="field">
+          <div class="field-head"><span class="lab" id="shadeLab">Shading</span></div>
+          <div class="seg" role="radiogroup" aria-labelledby="shadeLab">
+            <label><input class="vh" type="radio" name="shade" id="shade0" value="0" checked><span>Outline only</span></label>
+            <label><input class="vh" type="radio" name="shade" id="shade1" value="1"><span>Light</span></label>
+            <label><input class="vh" type="radio" name="shade" id="shade2" value="2"><span>Deep</span></label>
+          </div>
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="weight">Darkness</label><output id="weightOut" for="weight">2B</output></div>
+          <input type="range" id="weight" min="0" max="4" step="1" value="2">
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="detail">Fine detail</label><output id="detailOut" for="detail">45</output></div>
+          <input type="range" id="detail" min="0" max="100" step="1" value="45">
+        </div>
+        <div class="field">
+          <div class="field-head"><span class="lab" id="orderLab">Drawing order</span></div>
+          <div class="seg" role="radiogroup" aria-labelledby="orderLab">
+            <label><input class="vh" type="radio" name="order" id="orderOutline" value="outline" checked><span>Outline first</span></label>
+            <label><input class="vh" type="radio" name="order" id="orderTop" value="top"><span>Top to bottom</span></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>Drawn with</h2>
+        <div class="tools" role="radiogroup" aria-label="Drawing tool">
+          <label><input class="vh" type="radio" name="tool" id="toolPencil" value="pencil" checked>
+            <span class="card"><svg viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><rect width="120" height="34" fill="#f7f5ef"/><path d="M10 22c14-16 22 10 36-4s20-8 30 2 22-12 34-6" fill="none" stroke="#3a3a40" stroke-width="2.4" stroke-linecap="round" opacity=".8"/></svg>Graphite</span></label>
+          <label><input class="vh" type="radio" name="tool" id="toolCharcoal" value="charcoal">
+            <span class="card"><svg viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><rect width="120" height="34" fill="#f3f1ea"/><path d="M10 22c14-16 22 10 36-4s20-8 30 2 22-12 34-6" fill="none" stroke="#161515" stroke-width="4" stroke-linecap="round" opacity=".85"/></svg>Charcoal</span></label>
+          <label><input class="vh" type="radio" name="tool" id="toolSanguine" value="sanguine">
+            <span class="card"><svg viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><rect width="120" height="34" fill="#f4ecdc"/><path d="M10 22c14-16 22 10 36-4s20-8 30 2 22-12 34-6" fill="none" stroke="#9a3f28" stroke-width="2.6" stroke-linecap="round" opacity=".85"/></svg>Sanguine</span></label>
+          <label><input class="vh" type="radio" name="tool" id="toolBall" value="ballpoint">
+            <span class="card"><svg viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true"><rect width="120" height="34" fill="#fbfbf8"/><path d="M10 22c14-16 22 10 36-4s20-8 30 2 22-12 34-6" fill="none" stroke="#203a96" stroke-width="1.8" stroke-linecap="round"/></svg>Ballpoint</span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="showTool" checked>Show the pencil while it draws</label>
+      </section>
+
+      <section class="group">
+        <h2>Timing</h2>
+        <div class="field">
+          <div class="field-head"><label for="duration">Drawing time</label><output id="durationOut" for="duration">18 s</output></div>
+          <input type="range" id="duration" min="4" max="60" step="1" value="18">
+        </div>
+      </section>
+
+      <section class="group" id="exportGroup">
+        <h2>Save</h2>
+        <div class="stack" id="exportIdle">
+          <button class="btn primary" id="makeVideo" type="button">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3.5" width="9" height="9" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 7l4-2.2v6.4l-4-2.2z" fill="currentColor"/></svg>
+            Make the video
+          </button>
+          <button class="btn" id="saveImage" type="button" hidden>Save the finished drawing (PNG)</button>
+          <p class="hint" id="exportHint">The video is recorded live, so it takes as long as the drawing time. Keep this page in view until it finishes.</p>
+        </div>
+        <div class="rec" id="exportBusy" hidden>
+          <div class="rec-line"><i class="dot"></i><span id="recText">Recording 0%</span></div>
+          <div class="bar"><i id="recBar"></i></div>
+          <button class="btn" id="cancelRec" type="button">Cancel</button>
+        </div>
+        <div class="stack" id="exportDone" hidden>
+          <video id="clip" controls playsinline muted></video>
+          <button class="btn primary" id="saveVideo" type="button" hidden>Save the video</button>
+        </div>
+        <p class="msg" id="exportMsg" role="status" hidden></p>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+var PROC = 760;          // longest side used for tracing
+var OUT = 1280;          // longest side of the drawing and the video
+var MAX_OUTLINES = 1600;
+var A4_LONG_M = 0.297;
+
+function $(id) { return document.getElementById(id); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function mulberry(seed) {
+  var a = seed >>> 0;
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function mkCanvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function nextPaint() { return new Promise(function (r) { requestAnimationFrame(function () { setTimeout(r, 0); }); }); }
+
+/* ------------------------------------------------------------------ */
+/* Image analysis                                                      */
+/* ------------------------------------------------------------------ */
+
+function toGray(data, n) {
+  var g = new Float32Array(n);
+  for (var i = 0, j = 0; i < n; i++, j += 4) g[i] = (0.299 * data[j] + 0.587 * data[j + 1] + 0.114 * data[j + 2]) / 255;
+  return g;
+}
+
+/* Stretch the tonal range between the 1st and 99th percentile so flat, hazy photos still give edges. */
+function normalize(g) {
+  var n = g.length, hist = new Uint32Array(256), i;
+  for (i = 0; i < n; i++) hist[(g[i] * 255) | 0]++;
+  var lo = 0, hi = 255, acc = 0, cut = n * 0.01;
+  for (i = 0; i < 256; i++) { acc += hist[i]; if (acc > cut) { lo = i; break; } }
+  acc = 0;
+  for (i = 255; i >= 0; i--) { acc += hist[i]; if (acc > cut) { hi = i; break; } }
+  if (hi - lo < 8) return g;
+  var a = lo / 255, s = 255 / (hi - lo);
+  for (i = 0; i < n; i++) g[i] = clamp((g[i] - a) * s, 0, 1);
+  return g;
+}
+
+function gaussian(src, w, h, sigma) {
+  var r = Math.max(1, Math.ceil(sigma * 2.5)), k = new Float32Array(2 * r + 1), sum = 0, i, x, y, j, acc;
+  for (i = -r; i <= r; i++) { k[i + r] = Math.exp(-(i * i) / (2 * sigma * sigma)); sum += k[i + r]; }
+  for (i = 0; i < k.length; i++) k[i] /= sum;
+  var tmp = new Float32Array(w * h), out = new Float32Array(w * h), row, xx, yy;
+  for (y = 0; y < h; y++) {
+    row = y * w;
+    for (x = 0; x < w; x++) {
+      acc = 0;
+      for (j = -r; j <= r; j++) { xx = x + j; if (xx < 0) xx = 0; else if (xx >= w) xx = w - 1; acc += src[row + xx] * k[j + r]; }
+      tmp[row + x] = acc;
+    }
+  }
+  for (y = 0; y < h; y++) {
+    row = y * w;
+    for (x = 0; x < w; x++) {
+      acc = 0;
+      for (j = -r; j <= r; j++) { yy = y + j; if (yy < 0) yy = 0; else if (yy >= h) yy = h - 1; acc += tmp[yy * w + x] * k[j + r]; }
+      out[row + x] = acc;
+    }
+  }
+  return out;
+}
+
+/* Canny edge detector. Returns a 1-pixel-wide edge map plus the gradient strength per pixel. */
+function canny(g, w, h, hiFrac, loRatio, hiCap) {
+  var n = w * h, mag = new Float32Array(n), dir = new Uint8Array(n), x, y, i, gx, gy, m, ax, ay, max = 0;
+  for (y = 1; y < h - 1; y++) {
+    for (x = 1; x < w - 1; x++) {
+      i = y * w + x;
+      gx = (g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1]) - (g[i - w - 1] + 2 * g[i - 1] + g[i + w - 1]);
+      gy = (g[i + w - 1] + 2 * g[i + w] + g[i + w + 1]) - (g[i - w - 1] + 2 * g[i - w] + g[i - w + 1]);
+      m = Math.sqrt(gx * gx + gy * gy);
+      mag[i] = m; if (m > max) max = m;
+      ax = gx < 0 ? -gx : gx; ay = gy < 0 ? -gy : gy;
+      dir[i] = ay <= ax * 0.4142 ? 0 : ay >= ax * 2.4142 ? 2 : (gx * gy > 0 ? 1 : 3);
+    }
+  }
+  var edges = new Uint8Array(n);
+  if (max < 0.04) return { edges: edges, mag: mag, ref: 0, count: 0 };
+
+  /* Reference strength: the 90th percentile of every pixel that is not flat. */
+  var BINS = 2048, hist = new Uint32Array(BINS), floor = 0.03, live = 0, b;
+  for (i = 0; i < n; i++) if (mag[i] > floor) { b = (mag[i] / max * (BINS - 1)) | 0; hist[b]++; live++; }
+  if (live < 40) return { edges: edges, mag: mag, ref: 0, count: 0 };
+  var acc = 0, cut = live * 0.90, ref = max;
+  for (b = 0; b < BINS; b++) { acc += hist[b]; if (acc >= cut) { ref = (b + 1) / BINS * max; break; } }
+  var hi = Math.max(floor * 1.2, Math.min(ref * hiFrac, hiCap)), lo = hi * loRatio;
+
+  /* Non-maximum suppression, then hysteresis from the strong pixels. */
+  var nms = new Float32Array(n), a, c;
+  for (y = 1; y < h - 1; y++) {
+    for (x = 1; x < w - 1; x++) {
+      i = y * w + x; m = mag[i];
+      if (m < lo) continue;
+      switch (dir[i]) {
+        case 0: a = mag[i - 1]; c = mag[i + 1]; break;
+        case 2: a = mag[i - w]; c = mag[i + w]; break;
+        case 1: a = mag[i - w - 1]; c = mag[i + w + 1]; break;
+        default: a = mag[i - w + 1]; c = mag[i + w - 1];
+      }
+      if (m >= a && m > c) nms[i] = m;
+    }
+  }
+  var stack = [], count = 0, p, q, dx, dy;
+  for (i = 0; i < n; i++) if (nms[i] >= hi && !edges[i]) {
+    edges[i] = 1; stack.push(i);
+    while (stack.length) {
+      p = stack.pop(); count++;
+      for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        q = p + dy * w + dx;
+        if (nms[q] >= lo && !edges[q]) { edges[q] = 1; stack.push(q); }
+      }
+    }
+  }
+  return { edges: edges, mag: mag, ref: ref, count: count };
+}
+
+/* Zhang-Suen thinning restricted to the edge pixels, so staircase corners do not fork the tracer. */
+function thin(e, w) {
+  var list = [], i, n = e.length;
+  for (i = 0; i < n; i++) if (e[i]) list.push(i);
+  var changed = true, guard = 0;
+  while (changed && guard++ < 8) {
+    changed = false;
+    for (var step = 0; step < 2; step++) {
+      var del = [];
+      for (var k = 0; k < list.length; k++) {
+        i = list[k]; if (!e[i]) continue;
+        var p2 = e[i - w], p3 = e[i - w + 1], p4 = e[i + 1], p5 = e[i + w + 1], p6 = e[i + w], p7 = e[i + w - 1], p8 = e[i - 1], p9 = e[i - w - 1];
+        var B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+        if (B < 2 || B > 6) continue;
+        var A = (!p2 && p3) + (!p3 && p4) + (!p4 && p5) + (!p5 && p6) + (!p6 && p7) + (!p7 && p8) + (!p8 && p9) + (!p9 && p2);
+        if (A !== 1) continue;
+        if (step === 0) { if (p2 && p4 && p6) continue; if (p4 && p6 && p8) continue; }
+        else { if (p2 && p4 && p8) continue; if (p2 && p6 && p8) continue; }
+        del.push(i);
+      }
+      for (k = 0; k < del.length; k++) e[del[k]] = 0;
+      if (del.length) changed = true;
+    }
+    list = list.filter(function (j) { return e[j]; });
+  }
+  return e;
+}
+
+/* Follow connected edge pixels into chains, preferring to carry straight on through junctions. */
+function traceChains(e, w, h) {
+  var n = w * h, vis = new Uint8Array(n), chains = [];
+  var DX = [1, 1, 0, -1, -1, -1, 0, 1], DY = [0, 1, 1, 1, 0, -1, -1, -1];
+  function walk(x, y, dx, dy, out) {
+    for (;;) {
+      var best = -1, bs = -9, dl = Math.sqrt(dx * dx + dy * dy), k, j, s;
+      for (k = 0; k < 8; k++) {
+        j = (y + DY[k]) * w + x + DX[k];
+        if (!e[j] || vis[j]) continue;
+        s = dl > 0 ? (dx * DX[k] + dy * DY[k]) / (dl * (k & 1 ? 1.41421356 : 1)) : 0;
+        if (!(k & 1)) s += 0.15;
+        if (s > bs) { bs = s; best = k; }
+      }
+      if (best < 0) return;
+      if (dl > 0 && bs < -0.35) return;
+      x += DX[best]; y += DY[best]; vis[y * w + x] = 1; out.push(x, y);
+      dx = dx * 0.6 + DX[best]; dy = dy * 0.6 + DY[best];
+    }
+  }
+  function degree(i) {
+    return e[i - 1] + e[i + 1] + e[i - w] + e[i + w] + e[i - w - 1] + e[i - w + 1] + e[i + w - 1] + e[i + w + 1];
+  }
+  function start(i) {
+    var x = i % w, y = (i / w) | 0;
+    vis[i] = 1;
+    var fwd = [x, y]; walk(x, y, 0, 0, fwd);
+    var back = [];
+    if (fwd.length >= 4) walk(x, y, fwd[0] - fwd[2], fwd[1] - fwd[3], back); else walk(x, y, 0, 0, back);
+    var chain;
+    if (back.length) {
+      chain = [];
+      for (var k = back.length - 2; k >= 0; k -= 2) chain.push(back[k], back[k + 1]);
+      for (k = 0; k < fwd.length; k++) chain.push(fwd[k]);
+    } else chain = fwd;
+    var L = chain.length;
+    if (L >= 20) {
+      var ddx = chain[0] - chain[L - 2], ddy = chain[1] - chain[L - 1];
+      if (ddx * ddx + ddy * ddy <= 2.5) chain.push(chain[0], chain[1]);   // close the loop
+    }
+    chains.push(chain);
+  }
+  var i;
+  for (i = 0; i < n; i++) if (e[i] && !vis[i] && degree(i) === 1) start(i);
+  for (i = 0; i < n; i++) if (e[i] && !vis[i]) start(i);
+  return chains;
+}
+
+/* Ramer-Douglas-Peucker on a flat [x,y,x,y...] array. */
+function rdp(p, eps) {
+  var n = p.length / 2;
+  if (n < 3) return p;
+  var keep = new Uint8Array(n); keep[0] = 1; keep[n - 1] = 1;
+  var stack = [0, n - 1], e2 = eps * eps;
+  while (stack.length) {
+    var b = stack.pop(), a = stack.pop();
+    if (b - a < 2) continue;
+    var ax = p[2 * a], ay = p[2 * a + 1], bx = p[2 * b], by = p[2 * b + 1], dx = bx - ax, dy = by - ay, dd = dx * dx + dy * dy;
+    var worst = -1, wd = e2;
+    for (var i = a + 1; i < b; i++) {
+      var px = p[2 * i] - ax, py = p[2 * i + 1] - ay, d;
+      if (dd === 0) d = px * px + py * py;
+      else { var t = clamp((px * dx + py * dy) / dd, 0, 1); var ex = px - t * dx, ey = py - t * dy; d = ex * ex + ey * ey; }
+      if (d > wd) { wd = d; worst = i; }
+    }
+    if (worst >= 0) { keep[worst] = 1; stack.push(a, worst, worst, b); }
+  }
+  var out = [];
+  for (i = 0; i < n; i++) if (keep[i]) out.push(p[2 * i], p[2 * i + 1]);
+  return out;
+}
+
+/* Chaikin corner cutting; the two ends stay put. */
+function chaikin(p) {
+  var n = p.length / 2;
+  if (n < 3) return p;
+  var o = [p[0], p[1]];
+  for (var i = 0; i < n - 1; i++) {
+    var x0 = p[2 * i], y0 = p[2 * i + 1], x1 = p[2 * i + 2], y1 = p[2 * i + 3];
+    o.push(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1, 0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1);
+  }
+  o.push(p[2 * n - 2], p[2 * n - 1]);
+  return o;
+}
+
+function mkStroke(flat, kind, strength, rnd) {
+  var n = flat.length / 2, pts = new Float32Array(flat), cum = new Float32Array(n), len = 0;
+  for (var i = 1; i < n; i++) {
+    var dx = pts[2 * i] - pts[2 * i - 2], dy = pts[2 * i + 1] - pts[2 * i - 1];
+    len += Math.sqrt(dx * dx + dy * dy); cum[i] = len;
+  }
+  return { pts: pts, cum: cum, len: len, kind: kind, strength: strength,
+           wf: 0.82 + 0.22 * rnd() + 0.22 * strength, af: 0.74 + 0.26 * strength };
+}
+function reverseStroke(s) {
+  var n = s.cum.length, p = s.pts, q = new Float32Array(p.length), c = new Float32Array(n);
+  for (var i = 0; i < n; i++) { q[2 * i] = p[2 * (n - 1 - i)]; q[2 * i + 1] = p[2 * (n - 1 - i) + 1]; c[i] = s.len - s.cum[n - 1 - i]; }
+  s.pts = q; s.cum = c;
+}
+function sx0(s) { return s.pts[0]; }
+function sy0(s) { return s.pts[1]; }
+function sx1(s) { return s.pts[s.pts.length - 2]; }
+function sy1(s) { return s.pts[s.pts.length - 1]; }
+
+/* Greedy nearest-neighbour ordering so the pencil hops as little as a hand would. */
+function nnOrder(items, pen) {
+  var n = items.length, used = new Uint8Array(n), out = [], cx = pen.x, cy = pen.y;
+  var x0 = new Float32Array(n), y0 = new Float32Array(n), x1 = new Float32Array(n), y1 = new Float32Array(n), i;
+  for (i = 0; i < n; i++) { x0[i] = sx0(items[i]); y0[i] = sy0(items[i]); x1[i] = sx1(items[i]); y1[i] = sy1(items[i]); }
+  for (var c = 0; c < n; c++) {
+    var bi = -1, bd = Infinity, rev = false, d;
+    for (i = 0; i < n; i++) {
+      if (used[i]) continue;
+      d = (x0[i] - cx) * (x0[i] - cx) + (y0[i] - cy) * (y0[i] - cy);
+      if (d < bd) { bd = d; bi = i; rev = false; }
+      d = (x1[i] - cx) * (x1[i] - cx) + (y1[i] - cy) * (y1[i] - cy);
+      if (d < bd) { bd = d; bi = i; rev = true; }
+    }
+    used[bi] = 1;
+    var s = items[bi];
+    if (rev) { reverseStroke(s); cx = x0[bi]; cy = y0[bi]; } else { cx = x1[bi]; cy = y1[bi]; }
+    out.push(s);
+  }
+  pen.x = cx; pen.y = cy;
+  return out;
+}
+
+function orderOutlines(list, mode, H) {
+  if (!list.length) return list;
+  var pen = { x: 0, y: 0 }, out = [], i;
+  if (mode === 'top') {
+    var bands = 9, groups = [];
+    for (i = 0; i < bands; i++) groups.push([]);
+    list.forEach(function (s) {
+      var cy = 0, n = s.cum.length;
+      for (var k = 0; k < n; k++) cy += s.pts[2 * k + 1];
+      groups[clamp(Math.floor(cy / n / H * bands), 0, bands - 1)].push(s);
+    });
+    pen.x = sx0(list[0]); pen.y = 0;
+    groups.forEach(function (g) { out = out.concat(nnOrder(g, pen)); });
+    return out;
+  }
+  /* Outline first: the long, strong contours, then the mid lines, then the small detail. */
+  var sorted = list.slice().sort(function (a, b) { return b.len * (0.5 + b.strength) - a.len * (0.5 + a.strength); });
+  var total = 0; sorted.forEach(function (s) { total += s.len; });
+  var t1 = [], t2 = [], t3 = [], acc = 0;
+  sorted.forEach(function (s) { if (acc < total * 0.38) t1.push(s); else if (acc < total * 0.72) t2.push(s); else t3.push(s); acc += s.len; });
+  pen.x = sx0(sorted[0]); pen.y = sy0(sorted[0]);
+  return nnOrder(t1, pen).concat(nnOrder(t2, pen), nnOrder(t3, pen));
+}
+
+/* One running-sum box blur pass, edges clamped. */
+function boxBlur(src, w, h, r) {
+  var tmp = new Float32Array(w * h), out = new Float32Array(w * h), inv = 1 / (2 * r + 1), x, y, i, acc, row, add, sub;
+  for (y = 0; y < h; y++) {
+    row = y * w; acc = src[row] * (r + 1);
+    for (i = 1; i <= r; i++) acc += src[row + (i < w ? i : w - 1)];
+    for (x = 0; x < w; x++) {
+      tmp[row + x] = acc * inv;
+      add = x + r + 1; sub = x - r;
+      acc += src[row + (add < w ? add : w - 1)] - src[row + (sub >= 0 ? sub : 0)];
+    }
+  }
+  for (x = 0; x < w; x++) {
+    acc = tmp[x] * (r + 1);
+    for (i = 1; i <= r; i++) acc += tmp[(i < h ? i : h - 1) * w + x];
+    for (y = 0; y < h; y++) {
+      out[y * w + x] = acc * inv;
+      add = y + r + 1; sub = y - r;
+      acc += tmp[(add < h ? add : h - 1) * w + x] - tmp[(sub >= 0 ? sub : 0) * w + x];
+    }
+  }
+  return out;
+}
+/* Three box passes are a close, fast stand-in for a wide Gaussian. */
+function blur3(src, w, h, sigma) {
+  var r = Math.max(1, Math.round((Math.sqrt(4 * sigma * sigma + 1) - 1) / 2));
+  return boxBlur(boxBlur(boxBlur(src, w, h, r), w, h, r), w, h, r);
+}
+
+/* Guided filter (He, Sun, Tang): pulls a rough mask onto the real edges of the photo. */
+function guided(I, p, w, h, r, eps) {
+  var n = w * h, IP = new Float32Array(n), II = new Float32Array(n), i;
+  for (i = 0; i < n; i++) { IP[i] = I[i] * p[i]; II[i] = I[i] * I[i]; }
+  var mI = boxBlur(I, w, h, r), mP = boxBlur(p, w, h, r), mIP = boxBlur(IP, w, h, r), mII = boxBlur(II, w, h, r);
+  for (i = 0; i < n; i++) {
+    var a = (mIP[i] - mI[i] * mP[i]) / (mII[i] - mI[i] * mI[i] + eps);
+    IP[i] = a; II[i] = mP[i] - a * mI[i];
+  }
+  var ma = boxBlur(IP, w, h, r), mb = boxBlur(II, w, h, r), out = mP;
+  for (i = 0; i < n; i++) out[i] = clamp(ma[i] * I[i] + mb[i], 0, 1);
+  return out;
+}
+
+/* From the rough person mask: a keep-map that reaches just past the person's edge (so the edge line
+   survives), a thin line along the silhouette, and the silhouette itself as a yes/no map. */
+function personMaps(gray, M, W, H, k) {
+  var n = W * H, i;
+  var q = guided(gray, M, W, H, Math.max(2, Math.round(10 * k)), 0.004);
+  var qs = blur3(q, W, H, 1.6 * k), bin = new Float32Array(n);
+  for (i = 0; i < n; i++) bin[i] = qs[i] > 0.5 ? 1 : 0;
+  var keep = blur3(q, W, H, 4 * k);
+  for (i = 0; i < n; i++) { var u = clamp((keep[i] - 0.08) / 0.22, 0, 1); keep[i] = u * u * (3 - 2 * u); }
+  var line = boxBlur(bin, W, H, Math.max(1, Math.round(k)));
+  for (i = 0; i < n; i++) line[i] = 1 - Math.abs(2 * line[i] - 1);
+  line = gaussian(line, W, H, 0.8 * k);
+  return { keep: keep, line: line, bin: bin };
+}
+
+var SIL_STRENGTH = [0.34, 0.44, 0.55, 0.68, 0.8];
+var GRADE_GAMMA = [1.5, 2.1, 2.9, 3.9, 5.2];
+var SHADE_SIGMA = [5, 10, 18];
+var SHADE_AMOUNT = [0, 0.46, 0.86];
+
+/* The sketch itself: the classic dodge technique. Greyscale divided by a blurred copy of itself
+   (the same as colour-dodging it with its blurred negative) leaves only the lines and soft
+   gradients; a tone layer then puts the dark areas back, and paper grain breaks it up like graphite.
+   Returns pencil darkness per pixel, 0..255. */
+function buildSketch(gray, W, H, opts) {
+  var n = W * H, k = Math.max(W, H) / 1280, i, x, y;
+  var Gs = gaussian(gray, W, H, lerp(1.8, 0.55, opts.detail) * k);
+  var B = blur3(Gs, W, H, SHADE_SIGMA[opts.shade] * k);
+  var gamma = GRADE_GAMMA[opts.grade] * opts.tool.gammaMul;
+  var amt = Math.min(0.95, SHADE_AMOUNT[opts.shade] * opts.tool.shadeMul);
+  var ga = opts.tool.grain, sa = opts.tool.streak, e = 0.03;
+  var rnd = mulberry(9001), NT = 256, noise = new Float32Array(NT * NT), streak = new Float32Array(4096);
+  for (i = 0; i < noise.length; i++) noise[i] = rnd();
+  var v = 0.5; for (i = 0; i < 4096; i++) { v = v * 0.55 + rnd() * 0.45; streak[i] = clamp((v - 0.35) / 0.3, 0, 1); }
+  var a = -50 * Math.PI / 180, nx = -Math.sin(a) / (1.7 * k), ny = Math.cos(a) / (1.7 * k);
+  var keep = opts.maps ? opts.maps.keep : null, line = opts.maps ? opts.maps.line : null, sil = SIL_STRENGTH[opts.grade];
+  var D = new Uint8ClampedArray(n), s, L, t, u, d;
+  for (y = 0; y < H; y++) {
+    for (x = 0; x < W; x++) {
+      i = y * W + x;
+      s = (Gs[i] + e) / (B[i] + e); if (s > 1) s = 1;
+      L = Math.pow(s, gamma);
+      if (amt > 0) { t = 1 - Gs[i]; u = (t - 0.28) / 0.67; u = u < 0 ? 0 : u > 1 ? 1 : u; u = u * u * (3 - 2 * u); L *= 1 - amt * u; }
+      d = 1 - L;
+      if (keep) { u = line[i] * sil; if (u > d) d = u; d *= keep[i]; }
+      d *= 1 - ga * noise[(y & 255) * NT + (x & 255)] - sa * streak[((x * nx + y * ny) + 2048) & 4095];
+      d = (d - 0.035) / 0.965;
+      D[i] = d * 255;
+    }
+  }
+  return D;
+}
+
+/* Shading routes: zigzag strokes patch by patch, laid only where the sketch has something to show. */
+function hatchPass(cov, skip, cw, cell, W, H, k, angDeg, sp, kind, rnd) {
+  var a = angDeg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), cx = W / 2, cy = H / 2;
+  var cols = Math.max(1, Math.round(W / (256 * k))), rows = Math.max(1, Math.round(H / (256 * k))), tw = W / cols, th = H / rows;
+  var out = [], flip = false, e = 7 * k, step = 3 * k, thr = 14;
+  function hit(x, y) {
+    if (x < 0 || y < 0 || x >= W || y >= H) return false;
+    var c = ((y / cell) | 0) * cw + ((x / cell) | 0);
+    return cov[c] > thr && !(skip && skip[c]);
+  }
+  for (var r = 0; r < rows; r++) {
+    for (var ci = 0; ci < cols; ci++) {
+      var c = r % 2 ? cols - 1 - ci : ci;
+      var x0 = Math.max(0, c * tw - e), x1 = Math.min(W, (c + 1) * tw + e), y0 = Math.max(0, r * th - e), y1 = Math.min(H, (r + 1) * th + e);
+      var ds = [(x0 - cx) * -sa + (y0 - cy) * ca, (x1 - cx) * -sa + (y0 - cy) * ca, (x0 - cx) * -sa + (y1 - cy) * ca, (x1 - cx) * -sa + (y1 - cy) * ca];
+      var m0 = Math.ceil(Math.min.apply(null, ds) / sp), m1 = Math.floor(Math.max.apply(null, ds) / sp);
+      for (var m = m0; m <= m1; m++) {
+        var d = m * sp, ox = cx - sa * d, oy = cy + ca * d, tmin = -1e9, tmax = 1e9, ta, tb;
+        if (Math.abs(ca) > 1e-6) { ta = (x0 - ox) / ca; tb = (x1 - ox) / ca; tmin = Math.max(tmin, Math.min(ta, tb)); tmax = Math.min(tmax, Math.max(ta, tb)); }
+        else if (ox < x0 || ox > x1) continue;
+        if (Math.abs(sa) > 1e-6) { ta = (y0 - oy) / sa; tb = (y1 - oy) / sa; tmin = Math.max(tmin, Math.min(ta, tb)); tmax = Math.min(tmax, Math.max(ta, tb)); }
+        else if (oy < y0 || oy > y1) continue;
+        if (tmax - tmin < 8 * k) continue;
+        var runs = [], run = null, last = 0, miss = 0, t;
+        for (t = tmin; t <= tmax; t += step) {
+          if (hit(ox + ca * t, oy + sa * t)) { if (run === null) run = t; last = t; miss = 0; }
+          else if (run !== null && ++miss > 2) { if (last - run >= 6 * k) runs.push([run, last]); run = null; }
+        }
+        if (run !== null && last - run >= 6 * k) runs.push([run, last]);
+        if (!runs.length) continue;
+        if (flip) runs.reverse();
+        for (var q = 0; q < runs.length; q++) {
+          var ra = runs[q][0] - 4 * k, rb = runs[q][1] + 4 * k, t0 = flip ? rb : ra, t1 = flip ? ra : rb;
+          var jx = (rnd() - 0.5) * 4 * k, jy = (rnd() - 0.5) * 4 * k, bow = (rnd() - 0.5) * 5 * k, tm = (t0 + t1) / 2;
+          var st = mkStroke(chaikin([
+            ox + ca * t0 + jx, oy + sa * t0 + jy,
+            ox + ca * tm - sa * bow, oy + sa * tm + ca * bow,
+            ox + ca * t1 - jx, oy + sa * t1 - jy]), kind, 0.5, rnd);
+          if (st.len > 2) out.push(st);
+        }
+        flip = !flip;
+      }
+    }
+  }
+  return out;
+}
+
+function chainsToStrokes(chains, minPts, S, rnd, strengthOf) {
+  var out = [];
+  for (var i = 0; i < chains.length; i++) {
+    var ch = chains[i], n = ch.length / 2, q;
+    if (n < minPts) continue;
+    var flat = rdp(ch, 0.85);
+    for (q = 0; q < flat.length; q++) flat[q] = (flat[q] + 0.5) * S;
+    var st = mkStroke(chaikin(chaikin(flat)), 0, strengthOf(ch, n), rnd);
+    if (st.len > 3) out.push(st);
+  }
+  return out;
+}
+function markRoute(skip, cw, chh, cell, s) {
+  for (var L = 0; L <= s.len; L += 3) {
+    var p = pointAt(s, L), gx = (p[0] / cell) | 0, gy = (p[1] / cell) | 0;
+    if (gx < 1 || gy < 1 || gx >= cw - 1 || gy >= chh - 1) continue;
+    var g = gy * cw + gx; skip[g] = 1; skip[g - 1] = 1; skip[g + 1] = 1; skip[g - cw] = 1; skip[g + cw] = 1;
+  }
+}
+/* Share of a stroke's length where test(x, y) holds. */
+function shareWhere(s, test) {
+  var hit = 0, tot = 0;
+  for (var L = 0; L <= s.len; L += 6) { var p = pointAt(s, L); tot++; if (test(p[0], p[1])) hit++; }
+  return tot ? hit / tot : 0;
+}
+
+/* Full pipeline: photo in, sketch darkness and the pencil's route out.
+   `maskCanvas` (optional) marks the person in its alpha channel; everything else is left blank. */
+function analyse(src, maskCanvas, opts) {
+  var sc = OUT / Math.max(src.width, src.height), W = even(src.width * sc), H = even(src.height * sc), k = Math.max(W, H) / 1280, n = W * H;
+  var oc = mkCanvas(W, H), ox = oc.getContext('2d', { willReadFrequently: true }), x, y, i, c;
+  ox.imageSmoothingQuality = 'high'; ox.fillStyle = '#fff'; ox.fillRect(0, 0, W, H); ox.drawImage(src, 0, 0, W, H);
+  var gray = normalize(toGray(ox.getImageData(0, 0, W, H).data, n));
+
+  var maps = null, noPerson = false;
+  if (maskCanvas) {
+    var mc = mkCanvas(W, H), mx = mc.getContext('2d', { willReadFrequently: true });
+    mx.imageSmoothingQuality = 'high'; mx.drawImage(maskCanvas, 0, 0, W, H);
+    var md = mx.getImageData(0, 0, W, H).data, M = new Float32Array(n), area = 0;
+    for (i = 0; i < n; i++) { M[i] = md[4 * i + 3] / 255; area += M[i]; }
+    if (area / n < 0.015) noPerson = true; else maps = personMaps(gray, M, W, H, k);
+  }
+  opts.maps = maps;
+  var D = buildSketch(gray, W, H, opts);
+
+  /* where there is anything to draw, on a coarse grid */
+  var cell = 4, cw = Math.ceil(W / cell), chh = Math.ceil(H / cell), cov = new Uint8Array(cw * chh), skip = new Uint8Array(cw * chh);
+  for (y = 0; y < H; y++) { var rowc = ((y / cell) | 0) * cw; for (x = 0; x < W; x++) { c = rowc + ((x / cell) | 0); if (D[y * W + x] > cov[c]) cov[c] = D[y * W + x]; } }
+
+  var ps = PROC / Math.max(W, H), w = Math.max(24, Math.round(W * ps)), h = Math.max(24, Math.round(H * ps)), S = W / w;
+  var rnd = mulberry(20260 + w * 31 + h), first = [], strokes = [];
+
+  /* the person's silhouette is drawn before anything else: the outer line */
+  if (maps) {
+    var be = new Uint8Array(w * h), bin = maps.bin;
+    var on = function (px, py) { return bin[Math.min(H - 1, ((py + 0.5) * S) | 0) * W + Math.min(W - 1, ((px + 0.5) * S) | 0)] > 0; };
+    for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++)
+      if (on(x, y) && !(on(x - 1, y) && on(x + 1, y) && on(x, y - 1) && on(x, y + 1))) be[y * w + x] = 1;
+    thin(be, w);
+    first = chainsToStrokes(traceChains(be, w, h), 14, S, rnd, function () { return 1; });
+    first.forEach(function (s) { s.wide = true; });
+    first.sort(function (p, r) { return r.len - p.len; });
+    if (first.length > 60) first.length = 60;
+    if (first.length) first = [first[0]].concat(nnOrder(first.slice(1), { x: sx1(first[0]), y: sy1(first[0]) }));
+    first.forEach(function (s) { markRoute(skip, cw, chh, cell, s); });
+  }
+
+  /* then the contours inside it, found on a smaller copy */
+  var pc = mkCanvas(w, h), px2 = pc.getContext('2d', { willReadFrequently: true });
+  px2.imageSmoothingQuality = 'high'; px2.drawImage(oc, 0, 0, w, h);
+  var pg = normalize(toGray(px2.getImageData(0, 0, w, h).data, w * h));
+  var det = 0.38 + 0.4 * opts.detail;
+  var cn = canny(gaussian(pg, w, h, lerp(2.5, 1.0, det)), w, h, lerp(1.25, 0.16, det), 0.42, lerp(0.62, 0.09, det));
+  if (cn.count) {
+    thin(cn.edges, w);
+    strokes = chainsToStrokes(traceChains(cn.edges, w, h), Math.round(lerp(30, 8, det)), S, rnd, function (ch, m) {
+      var sum = 0; for (var q = 0; q < m; q++) sum += cn.mag[ch[2 * q + 1] * w + ch[2 * q]];
+      return clamp(sum / m / (cn.ref * 1.6), 0, 1);
+    });
+    if (maps) {
+      var keep = maps.keep;
+      strokes = strokes.filter(function (s) {
+        if (shareWhere(s, function (qx, qy) { return keep[Math.min(H - 1, qy | 0) * W + Math.min(W - 1, qx | 0)] > 0.5; }) < 0.6) return false;
+        return shareWhere(s, function (qx, qy) { return skip[Math.min(chh - 1, (qy / cell) | 0) * cw + Math.min(cw - 1, (qx / cell) | 0)] > 0; }) < 0.7;
+      });
+    }
+    if (strokes.length > MAX_OUTLINES) {
+      strokes.sort(function (p, r) { return r.len * (0.5 + r.strength) - p.len * (0.5 + p.strength); });
+      strokes.length = MAX_OUTLINES;
+    }
+    strokes = orderOutlines(strokes, opts.order, H);
+  }
+  strokes.forEach(function (s) { markRoute(skip, cw, chh, cell, s); });
+  strokes = first.concat(strokes);
+  var outlines = strokes.length;
+
+  /* phase 2: open hatching that lets the tone build up; phase 3: a closer pass that finishes it */
+  if (opts.shade > 0) strokes = strokes.concat(hatchPass(cov, skip, cw, cell, W, H, k, -50, 19 * k, 1, rnd));
+  strokes = strokes.concat(hatchPass(cov, skip, cw, cell, W, H, k, 40, 21 * k, 2, rnd));
+  return { W: W, H: H, D: D, strokes: strokes, outlines: outlines, masked: !!maps, noPerson: noPerson };
+}
+
+var BRUSH = [9, 12.5, 25];           // width of the reveal per phase, in px at 1280
+var LEAD = 0.02, FADE_START = 0.95;  // the last 5% settles anything the strokes missed
+
+/* Each stroke gets a slice of the 0..1 timeline. Contours, hatching and finishing each get a fixed
+   share, so the picture never spends the whole clip on one phase. */
+function buildTimeline(strokes) {
+  var n = strokes.length, t0 = new Float64Array(n), t1 = new Float64Array(n), draw = new Float64Array(n), hop = new Float64Array(n), i;
+  var sums = [0, 0, 0], share = [0.42, 0.34, 0.24];
+  for (i = 0; i < n; i++) {
+    var s = strokes[i];
+    draw[i] = s.kind ? 2 + 0.5 * Math.pow(s.len, 0.9) : 5 + Math.pow(s.len, 0.9);
+    if (i < n - 1) {
+      var dx = sx0(strokes[i + 1]) - sx1(s), dy = sy0(strokes[i + 1]) - sy1(s);
+      hop[i] = 2 + 0.4 * Math.pow(Math.sqrt(dx * dx + dy * dy), 0.85);
+    }
+    sums[s.kind] += draw[i] + hop[i];
+  }
+  var live = 0; for (i = 0; i < 3; i++) if (sums[i] > 0) live += share[i];
+  var span = FADE_START - LEAD, t = LEAD;
+  for (i = 0; i < n; i++) {
+    var kd = strokes[i].kind, f = span * (share[kd] / live) / sums[kd];
+    t0[i] = t; t += draw[i] * f; t1[i] = t; t += hop[i] * f;
+  }
+  return { t0: t0, t1: t1 };
+}
+
+/* ------------------------------------------------------------------ */
+/* Drawing materials                                                   */
+/* ------------------------------------------------------------------ */
+
+var TOOLS = {
+  pencil:    { paper: [247, 245, 239], speck: 9, ink: [44, 44, 50],   grain: 0.24, streak: 0.14, gammaMul: 1,    shadeMul: 1,    sprite: 'pencil', body: ['#f2b62b', '#f9d470', '#d0961a'], lead: '#34343a',
+               grades: ['H', 'HB', '2B', '4B', '6B'], check: 'Show the pencil while it draws' },
+  charcoal:  { paper: [243, 241, 234], speck: 11, ink: [20, 19, 19],  grain: 0.34, streak: 0.2,  gammaMul: 1.25, shadeMul: 1.12, sprite: 'stick', body: ['#1b1a1a', '#3a3838', '#0c0b0b'],
+               grades: ['Feather light', 'Light', 'Medium', 'Heavy', 'Very heavy'], check: 'Show the charcoal while it draws' },
+  sanguine:  { paper: [244, 236, 220], speck: 9, ink: [146, 58, 36],  grain: 0.26, streak: 0.16, gammaMul: 1.1,  shadeMul: 1,    sprite: 'pencil', body: ['#8c3a26', '#b05a40', '#6a2a1a'], lead: '#8a3a26',
+               grades: ['Feather light', 'Light', 'Medium', 'Heavy', 'Very heavy'], check: 'Show the pencil while it draws' },
+  ballpoint: { paper: [251, 251, 248], speck: 5, ink: [26, 48, 138],  grain: 0.1,  streak: 0.2,  gammaMul: 1.05, shadeMul: 0.9,  sprite: 'pen',
+               grades: ['Feather light', 'Light', 'Medium', 'Heavy', 'Very heavy'], check: 'Show the pen while it draws' }
+};
+
+function rgb(a, al) { return 'rgba(' + a[0] + ',' + a[1] + ',' + a[2] + ',' + (al === undefined ? 1 : al) + ')'; }
+
+/* The sketch as a transparent layer of ink: one colour, opacity from the darkness map. */
+function makeLayer(D, W, H, ink) {
+  var c = mkCanvas(W, H), x = c.getContext('2d'), im = x.createImageData(W, H), d = im.data, n = W * H;
+  for (var i = 0, j = 0; i < n; i++, j += 4) { d[j] = ink[0]; d[j + 1] = ink[1]; d[j + 2] = ink[2]; d[j + 3] = D[i]; }
+  x.putImageData(im, 0, 0);
+  return c;
+}
+/* Speckled opacity for the open hatching pass, so it goes down unevenly like graphite on tooth. */
+function makeGrain() {
+  var T = 128, c = mkCanvas(T, T), x = c.getContext('2d'), im = x.createImageData(T, T), d = im.data, rnd = mulberry(77);
+  for (var i = 0; i < T * T; i++) { d[4 * i + 3] = Math.round((rnd() < 0.1 ? 0.3 : 0.62 + 0.38 * rnd()) * 255); }
+  x.putImageData(im, 0, 0);
+  return x.createPattern(c, 'repeat');
+}
+
+function makePaper(tool, W, H) {
+  var c = mkCanvas(W, H), x = c.getContext('2d'), rnd = mulberry(4242);
+  x.fillStyle = rgb(tool.paper); x.fillRect(0, 0, W, H);
+  var T = 192, t = mkCanvas(T, T), tx = t.getContext('2d'), im = tx.createImageData(T, T), d = im.data;
+  for (var i = 0; i < T * T; i++) {
+    var lum = (rnd() - 0.5) * 2 * tool.speck;
+    d[4 * i] = clamp(tool.paper[0] + lum, 0, 255); d[4 * i + 1] = clamp(tool.paper[1] + lum, 0, 255); d[4 * i + 2] = clamp(tool.paper[2] + lum, 0, 255); d[4 * i + 3] = 255;
+  }
+  tx.putImageData(im, 0, 0);
+  x.fillStyle = x.createPattern(t, 'repeat'); x.fillRect(0, 0, W, H);
+  return c;
+}
+
+/* ---- stroke rendering ---- */
+function segIndex(c, L) {
+  var lo = 0, hi = c.length - 2;
+  while (lo < hi) { var m = (lo + hi + 1) >> 1; if (c[m] <= L) lo = m; else hi = m - 1; }
+  return lo;
+}
+function pointAt(s, L) {
+  var c = s.cum, p = s.pts;
+  if (L <= 0) return [p[0], p[1]];
+  if (L >= s.len) return [p[p.length - 2], p[p.length - 1]];
+  var i = segIndex(c, L), l = c[i + 1] - c[i], f = l > 0 ? (L - c[i]) / l : 0;
+  return [p[2 * i] + (p[2 * i + 2] - p[2 * i]) * f, p[2 * i + 1] + (p[2 * i + 3] - p[2 * i + 1]) * f];
+}
+function pathRange(ctx, s, a, b) {
+  var p = s.pts, c = s.cum, n = c.length;
+  if (a < 0) a = 0; if (b > s.len) b = s.len;
+  if (b - a <= 0.01) return;
+  var i = segIndex(c, a), j = i + 1, l = c[j] - c[i], f = l > 0 ? (a - c[i]) / l : 0;
+  ctx.beginPath();
+  ctx.moveTo(p[2 * i] + (p[2 * j] - p[2 * i]) * f, p[2 * i + 1] + (p[2 * j + 1] - p[2 * i + 1]) * f);
+  while (j < n - 1 && c[j] < b) { ctx.lineTo(p[2 * j], p[2 * j + 1]); j++; }
+  var i2 = j - 1; l = c[j] - c[i2]; f = l > 0 ? (b - c[i2]) / l : 1; if (f > 1) f = 1;
+  ctx.lineTo(p[2 * i2] + (p[2 * j] - p[2 * i2]) * f, p[2 * i2 + 1] + (p[2 * j + 1] - p[2 * i2 + 1]) * f);
+  ctx.stroke();
+}
+
+/* ---- the instrument that follows the line ---- */
+function toolSilhouette(ctx, sprite) {
+  ctx.beginPath();
+  if (sprite === 'stick') { ctx.moveTo(0, 0); ctx.lineTo(6, -9); ctx.lineTo(120, -9); ctx.lineTo(120, 9); ctx.lineTo(6, 9); }
+  else { ctx.moveTo(0, 0); ctx.lineTo(36, -11); ctx.lineTo(292, -11); ctx.lineTo(292, 11); ctx.lineTo(36, 11); }
+  ctx.closePath();
+}
+function drawInstrument(ctx, t) {
+  var g, b = t.body;
+  if (t.sprite === 'pencil') {
+    ctx.fillStyle = '#e6c493'; ctx.beginPath(); ctx.moveTo(9, -3); ctx.lineTo(38, -11); ctx.lineTo(38, 11); ctx.lineTo(9, 3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#c9a36c'; ctx.beginPath(); ctx.moveTo(9, 0.5); ctx.lineTo(38, 3.6); ctx.lineTo(38, 11); ctx.lineTo(9, 3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = t.lead; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(10, -3.2); ctx.lineTo(10, 3.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = b[0]; ctx.fillRect(38, -11, 208, 22);
+    ctx.fillStyle = b[1]; ctx.fillRect(38, -11, 208, 7);
+    ctx.fillStyle = b[2]; ctx.fillRect(38, 4, 208, 7);
+    ctx.fillStyle = b[0]; ctx.beginPath(); ctx.moveTo(38, -11); ctx.lineTo(44, -7.5); ctx.lineTo(38, -4); ctx.lineTo(44, 0); ctx.lineTo(38, 4); ctx.lineTo(44, 7.5); ctx.lineTo(38, 11); ctx.lineTo(48, 11); ctx.lineTo(48, -11); ctx.closePath(); ctx.fill();
+    g = ctx.createLinearGradient(0, -11, 0, 11); g.addColorStop(0, '#eef1f3'); g.addColorStop(0.5, '#aab2b9'); g.addColorStop(1, '#7c858d');
+    ctx.fillStyle = g; ctx.fillRect(246, -11.5, 22, 23);
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(251, -11.5, 1.6, 23); ctx.fillRect(262, -11.5, 1.6, 23);
+    ctx.fillStyle = '#e58a9c'; ctx.beginPath(); ctx.moveTo(268, -10.5); ctx.lineTo(284, -10.5); ctx.quadraticCurveTo(292, -10.5, 292, -3); ctx.lineTo(292, 3); ctx.quadraticCurveTo(292, 10.5, 284, 10.5); ctx.lineTo(268, 10.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(268, -10.5, 20, 5);
+  } else if (t.sprite === 'stick') {
+    g = ctx.createLinearGradient(0, -9, 0, 9); g.addColorStop(0, b[1]); g.addColorStop(0.45, b[0]); g.addColorStop(1, b[2]);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, 1); ctx.lineTo(5, -9); ctx.lineTo(116, -9); ctx.quadraticCurveTo(120, -9, 120, -5); ctx.lineTo(120, 5); ctx.quadraticCurveTo(120, 9, 116, 9); ctx.lineTo(4, 9); ctx.closePath(); ctx.fill();
+  } else {
+    var body = '#2b4fc4', dark = '#1c3690';
+    g = ctx.createLinearGradient(0, -6, 0, 6); g.addColorStop(0, '#f4f5f6'); g.addColorStop(1, '#878f97');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(20, -5.5); ctx.lineTo(20, 5.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = dark; ctx.beginPath(); ctx.moveTo(20, -5.5); ctx.lineTo(40, -10.5); ctx.lineTo(96, -10.5); ctx.lineTo(96, 10.5); ctx.lineTo(40, 10.5); ctx.lineTo(20, 5.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.14)'; for (var r = 48; r < 94; r += 8) ctx.fillRect(r, -10.5, 2.4, 21);
+    ctx.fillStyle = body; ctx.fillRect(96, -10.5, 180, 21);
+    ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.fillRect(96, -10.5, 180, 5.5);
+    ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(96, 5, 180, 5.5);
+    ctx.fillStyle = dark; ctx.beginPath(); ctx.moveTo(276, -10.5); ctx.lineTo(288, -10.5); ctx.quadraticCurveTo(292, -10.5, 292, -6); ctx.lineTo(292, 6); ctx.quadraticCurveTo(292, 10.5, 288, 10.5); ctx.lineTo(276, 10.5); ctx.closePath(); ctx.fill();
+    g = ctx.createLinearGradient(0, -15, 0, -11); g.addColorStop(0, '#f1f3f4'); g.addColorStop(1, '#9099a1');
+    ctx.fillStyle = g; ctx.fillRect(196, -15, 86, 4.5);
+  }
+}
+function drawTool(ctx, x, y, lift, t, k, wobble) {
+  var ang = (-52 + wobble) * Math.PI / 180;
+  ctx.save();
+  ctx.globalAlpha = 0.17;
+  ctx.fillStyle = '#000';
+  ctx.translate(x + (4 + lift * 16) * k, y + (5 + lift * 14) * k);
+  ctx.rotate(ang + 0.05); ctx.scale(k, k);
+  toolSilhouette(ctx, t.sprite); ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.translate(x, y - lift * 11 * k);
+  ctx.rotate(ang); ctx.scale(k, k);
+  drawInstrument(ctx, t);
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------ */
+/* Sample portrait (an illustration drawn here, so the page opens with something to trace) */
+/* ------------------------------------------------------------------ */
+function makeSample() {
+  var c = mkCanvas(720, 900), x = c.getContext('2d'), g;
+  function ell(cx, cy, rx, ry) { x.beginPath(); x.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); }
+  g = x.createLinearGradient(0, 0, 0, 900); g.addColorStop(0, '#e6ecef'); g.addColorStop(1, '#ccd5db'); x.fillStyle = g; x.fillRect(0, 0, 720, 900);
+  // jumper
+  x.fillStyle = '#35495d'; x.beginPath(); x.moveTo(30, 900); x.bezierCurveTo(50, 745, 160, 700, 292, 664); x.lineTo(428, 664); x.bezierCurveTo(560, 700, 670, 745, 690, 900); x.closePath(); x.fill();
+  x.strokeStyle = '#243444'; x.lineWidth = 7; x.lineCap = 'round';
+  x.beginPath(); x.moveTo(150, 900); x.quadraticCurveTo(160, 820, 186, 770); x.moveTo(570, 900); x.quadraticCurveTo(560, 820, 534, 770); x.stroke();
+  // shirt collar
+  x.fillStyle = '#f4f2ec'; x.beginPath(); x.moveTo(288, 668); x.lineTo(360, 790); x.lineTo(432, 668); x.lineTo(408, 636); x.lineTo(312, 636); x.closePath(); x.fill();
+  x.strokeStyle = '#b9b5aa'; x.lineWidth = 5; x.beginPath(); x.moveTo(312, 640); x.lineTo(360, 716); x.lineTo(408, 640); x.stroke();
+  // neck
+  x.fillStyle = '#b07654'; x.beginPath(); x.moveTo(306, 548); x.lineTo(306, 650); x.quadraticCurveTo(360, 716, 414, 650); x.lineTo(414, 548); x.closePath(); x.fill();
+  // ears
+  x.fillStyle = '#c48a66'; ell(236, 432, 22, 42); x.fill(); ell(484, 432, 22, 42); x.fill();
+  // head
+  x.fillStyle = '#d39a76'; x.beginPath(); x.moveTo(240, 380); x.bezierCurveTo(236, 250, 300, 186, 360, 186); x.bezierCurveTo(420, 186, 484, 250, 480, 380);
+  x.bezierCurveTo(482, 520, 424, 618, 360, 618); x.bezierCurveTo(296, 618, 238, 520, 240, 380); x.closePath(); x.fill();
+  // soft shadow down one side of the face
+  g = x.createLinearGradient(380, 0, 486, 0); g.addColorStop(0, 'rgba(120,70,40,0)'); g.addColorStop(1, 'rgba(120,70,40,.42)');
+  x.save(); x.beginPath(); x.moveTo(240, 380); x.bezierCurveTo(236, 250, 300, 186, 360, 186); x.bezierCurveTo(420, 186, 484, 250, 480, 380);
+  x.bezierCurveTo(482, 520, 424, 618, 360, 618); x.bezierCurveTo(296, 618, 238, 520, 240, 380); x.closePath(); x.clip(); x.fillStyle = g; x.fillRect(360, 180, 140, 450); x.restore();
+  // hair
+  x.fillStyle = '#2a1f1b'; x.beginPath(); x.moveTo(234, 404); x.bezierCurveTo(206, 256, 262, 142, 372, 144); x.bezierCurveTo(478, 146, 516, 256, 486, 404);
+  x.bezierCurveTo(480, 336, 458, 296, 430, 268); x.bezierCurveTo(380, 304, 304, 300, 262, 270); x.bezierCurveTo(250, 304, 244, 352, 234, 404); x.closePath(); x.fill();
+  x.strokeStyle = '#463630'; x.lineWidth = 5; x.beginPath(); x.moveTo(300, 190); x.quadraticCurveTo(350, 236, 426, 262); x.moveTo(280, 216); x.quadraticCurveTo(320, 262, 380, 280); x.stroke();
+  // brows
+  x.strokeStyle = '#2a1f1b'; x.lineWidth = 9; x.beginPath(); x.moveTo(276, 360); x.quadraticCurveTo(304, 346, 338, 358); x.moveTo(382, 358); x.quadraticCurveTo(416, 346, 444, 360); x.stroke();
+  // eyes
+  [308, 412].forEach(function (cx) {
+    x.fillStyle = '#fbfbf7'; x.beginPath(); x.moveTo(cx - 29, 412); x.quadraticCurveTo(cx, 390, cx + 29, 412); x.quadraticCurveTo(cx, 430, cx - 29, 412); x.fill();
+    x.fillStyle = '#4b3628'; ell(cx, 411, 11.5, 11.5); x.fill();
+    x.fillStyle = '#101010'; ell(cx, 411, 5, 5); x.fill();
+    x.fillStyle = '#ffffff'; ell(cx + 4, 407, 2.4, 2.4); x.fill();
+    x.strokeStyle = '#2a1f1b'; x.lineWidth = 4; x.beginPath(); x.moveTo(cx - 30, 412); x.quadraticCurveTo(cx, 389, cx + 30, 412); x.stroke();
+  });
+  // glasses
+  x.strokeStyle = '#1e2329'; x.lineWidth = 6; ell(308, 412, 46, 44); x.stroke(); ell(412, 412, 46, 44); x.stroke();
+  x.beginPath(); x.moveTo(353, 404); x.quadraticCurveTo(360, 396, 367, 404); x.moveTo(262, 404); x.lineTo(238, 396); x.moveTo(458, 404); x.lineTo(482, 396); x.stroke();
+  // nose
+  x.strokeStyle = '#8a5638'; x.lineWidth = 6; x.beginPath(); x.moveTo(352, 438); x.quadraticCurveTo(340, 486, 344, 502); x.quadraticCurveTo(360, 516, 378, 502); x.stroke();
+  // mouth
+  x.fillStyle = '#8f3a38'; x.beginPath(); x.moveTo(320, 548); x.quadraticCurveTo(344, 534, 360, 542); x.quadraticCurveTo(376, 534, 400, 548); x.quadraticCurveTo(360, 558, 320, 548); x.fill();
+  x.fillStyle = '#a84e49'; x.beginPath(); x.moveTo(324, 551); x.quadraticCurveTo(360, 584, 396, 551); x.quadraticCurveTo(360, 562, 324, 551); x.fill();
+  return c;
+}
+
+/* The same figure as a solid shape, so the sample needs no person finder. */
+function makeSampleMask() {
+  var c = mkCanvas(720, 900), x = c.getContext('2d');
+  x.fillStyle = '#000';
+  x.beginPath(); x.moveTo(30, 900); x.bezierCurveTo(50, 745, 160, 700, 292, 664); x.lineTo(428, 664); x.bezierCurveTo(560, 700, 670, 745, 690, 900); x.closePath(); x.fill();
+  x.fillRect(306, 548, 108, 130);
+  x.beginPath(); x.ellipse(236, 432, 22, 42, 0, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.ellipse(484, 432, 22, 42, 0, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.moveTo(240, 380); x.bezierCurveTo(236, 250, 300, 186, 360, 186); x.bezierCurveTo(420, 186, 484, 250, 480, 380);
+  x.bezierCurveTo(482, 520, 424, 618, 360, 618); x.bezierCurveTo(296, 618, 238, 520, 240, 380); x.closePath(); x.fill();
+  x.beginPath(); x.moveTo(234, 404); x.bezierCurveTo(206, 256, 262, 142, 372, 144); x.bezierCurveTo(478, 146, 516, 256, 486, 404); x.closePath(); x.fill();
+  return c;
+}
+
+/* ------------------------------------------------------------------ */
+/* Finding the person (runs in the browser; the photo is not sent anywhere) */
+/* ------------------------------------------------------------------ */
+var MP_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/';
+var finder = { ready: null, inst: null, waiting: null, down: false };
+function withTimeout(promise, ms) {
+  return new Promise(function (resolve, reject) {
+    var t = setTimeout(function () { reject(new Error('timeout')); }, ms);
+    promise.then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
+  });
+}
+function loadFinder() {
+  if (finder.ready) return finder.ready;
+  /* The model weights ship as base64 in mp/model.json; hand them to the library when it asks for them. */
+  var weights = fetch('mp/model.json').then(function (r) { if (!r.ok) throw new Error('model'); return r.json(); }).then(function (j) {
+    var files = {};
+    Object.keys(j).forEach(function (name) {
+      var bin = atob(j[name]), buf = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      files[name] = buf;
+    });
+    var realFetch = window.fetch.bind(window);
+    window.fetch = function (input, init) {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var name = url.split('?')[0].split('/').pop();
+      if (url.indexOf('mp/') >= 0 && files[name]) return Promise.resolve(new Response(files[name].slice(0), { status: 200, headers: { 'Content-Type': 'application/octet-stream' } }));
+      return realFetch(input, init);
+    };
+  });
+  var p = weights.then(function () { return new Promise(function (resolve, reject) {
+    var el = document.createElement('script');
+    el.src = MP_CDN + 'selfie_segmentation.js'; el.crossOrigin = 'anonymous';
+    el.onload = function () {
+      try {
+        if (typeof window.SelfieSegmentation !== 'function') throw new Error('missing');
+        /* the loader scripts come from the CDN; the model and WebAssembly files ship with this page */
+        var S = new window.SelfieSegmentation({ locateFile: function (f) { return /\.js$/.test(f) ? MP_CDN + f : 'mp/' + f; } });
+        S.setOptions({ modelSelection: 0, selfieMode: false });
+        S.onResults(function (r) { var w = finder.waiting; finder.waiting = null; if (w) w(r); });
+        Promise.resolve(S.initialize()).then(function () { finder.inst = S; resolve(S); }, reject);
+      } catch (e) { reject(e); }
+    };
+    el.onerror = function () { reject(new Error('script')); };
+    document.head.appendChild(el);
+  }); });
+  finder.ready = withTimeout(p, 30000);
+  finder.ready.catch(function () { /* reported by the caller */ });
+  return finder.ready;
+}
+/* Resolves to a canvas whose alpha channel marks the person. */
+async function findPerson(src) {
+  var S = await loadFinder();
+  var r = await withTimeout(new Promise(function (resolve, reject) {
+    finder.waiting = resolve;
+    Promise.resolve(S.send({ image: src })).catch(reject);
+  }), 20000);
+  if (!r || !r.segmentationMask) throw new Error('no mask');
+  var c = mkCanvas(src.width, src.height), x = c.getContext('2d');
+  x.drawImage(r.segmentationMask, 0, 0, c.width, c.height);
+  return c;
+}
+
+/* ------------------------------------------------------------------ */
+/* App state                                                           */
+/* ------------------------------------------------------------------ */
+var view = $('view'), vctx = view.getContext('2d');
+var settings = { subject: 'person', detail: 45, weight: 2, shade: 0, order: 'outline', tool: 'pencil', showTool: true, duration: 18 };
+var state = {
+  src: null, isSample: true, name: 'Sample portrait', personMask: null,
+  W: 960, H: 1200, k: 1, strokes: [], outlines: 0, t0: null, t1: null,
+  T: 1, playing: false, last: 0, played: false, job: 0, busy: false,
+  paper: null, layer: null, D: null, grain: null,
+  mask: null, mctx: null, mask2: null, m2ctx: null, reveal: null, rctx: null, mDone: 0, mL: 0
+};
+var rec = null, raf = 0, downloads = null, clipBlob = null, clipUrl = '', clipExt = 'webm';
+/* Inside Claude a save goes through the viewer's own prompt; on an ordinary website it is a normal browser download. */
+var standalone = !(window.claude && typeof window.claude.use === 'function');
+function canSave() { return standalone || !!downloads; }
+function saveFile(filename, blob) {
+  if (downloads) return downloads.save({ filename: filename, data: blob });
+  return new Promise(function (resolve, reject) {
+    try {
+      var url = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = url; a.download = filename; a.style.display = 'none';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+      resolve({ status: 'saved' });
+    } catch (e) { reject({ code: 'unavailable' }); }
+  });
+}
+var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+try {
+  var saved = JSON.parse(localStorage.getItem('pencil-trace-settings-3') || 'null');
+  if (saved && typeof saved === 'object') {
+    if (saved.detail >= 0 && saved.detail <= 100) settings.detail = Math.round(saved.detail);
+    if (saved.weight >= 0 && saved.weight <= 4) settings.weight = Math.round(saved.weight);
+    if (saved.shade >= 0 && saved.shade <= 2) settings.shade = Math.round(saved.shade);
+    if (saved.order === 'top' || saved.order === 'outline') settings.order = saved.order;
+    if (saved.subject === 'person' || saved.subject === 'all') settings.subject = saved.subject;
+    if (TOOLS[saved.tool]) settings.tool = saved.tool;
+    if (typeof saved.showTool === 'boolean') settings.showTool = saved.showTool;
+    if (saved.duration >= 4 && saved.duration <= 60) settings.duration = Math.round(saved.duration);
+  }
+} catch (e) { /* storage is optional */ }
+function persist() { try { localStorage.setItem('pencil-trace-settings-3', JSON.stringify(settings)); } catch (e) { /* optional */ } }
+
+function tool() { return TOOLS[settings.tool]; }
+
+/* ---- rendering ----
+   The finished sketch sits in `layer`. A mask collects every stroke the pencil has made so far,
+   and each frame shows the sketch through that mask, so what appears is always the real drawing. */
+function resetMask() { state.mctx.clearRect(0, 0, state.W, state.H); state.mDone = 0; state.mL = 0; }
+function maskStroke(s, a, b) {
+  var c = state.mctx;
+  c.lineWidth = (s.wide ? 17 : BRUSH[s.kind] * (s.kind ? 1 : 0.85 + 0.3 * s.strength)) * state.k;
+  c.strokeStyle = s.kind === 1 ? state.grain : '#000';
+  pathRange(c, s, a, b);
+}
+function advanceMask(done, L) {
+  if (done < state.mDone || (done === state.mDone && L < state.mL)) resetMask();
+  var S = state.strokes;
+  while (state.mDone < done) { maskStroke(S[state.mDone], state.mL, S[state.mDone].len); state.mDone++; state.mL = 0; }
+  if (done < S.length && L > state.mL) { maskStroke(S[done], state.mL, L); state.mL = L; }
+}
+function rebuildMaterials() {
+  var t = tool(), W = state.W, H = state.H;
+  state.paper = makePaper(t, W, H);
+  state.layer = makeLayer(state.D, W, H, t.ink);
+  if (!state.mask || state.mask.width !== W || state.mask.height !== H) {
+    state.mask = mkCanvas(W, H); state.mctx = state.mask.getContext('2d');
+    state.mask2 = mkCanvas(W, H); state.m2ctx = state.mask2.getContext('2d');
+    state.reveal = mkCanvas(W, H); state.rctx = state.reveal.getContext('2d');
+  }
+  state.mctx.lineCap = 'round'; state.mctx.lineJoin = 'round';
+  state.grain = makeGrain();
+  resetMask();
+}
+function upperBound(arr, v) { var lo = 0, hi = arr.length; while (lo < hi) { var m = (lo + hi) >> 1; if (arr[m] <= v) lo = m + 1; else hi = m; } return lo; }
+function ease(f) { return f * f * (3 - 2 * f); }
+
+function render() {
+  var S = state.strokes, n = S.length, T = state.T, W = state.W, H = state.H;
+  if (!state.paper) return;
+  vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.globalAlpha = 1;
+  vctx.drawImage(state.paper, 0, 0);
+  if (T >= 1 || !n) { vctx.drawImage(state.layer, 0, 0); return; }
+  var done = 0, L = 0, tip, lift = 0, f, a, b, i = upperBound(state.t0, T) - 1;
+  if (i < 0) {
+    f = ease(clamp(T / state.t0[0], 0, 1));
+    a = [W * 0.82, H + 60 * state.k]; b = [sx0(S[0]), sy0(S[0])];
+    tip = [lerp(a[0], b[0], f), lerp(a[1], b[1], f)]; lift = 1 - f * f;
+  } else if (T < state.t1[i]) {
+    f = (T - state.t0[i]) / (state.t1[i] - state.t0[i]);
+    f = 0.55 * f + 0.45 * ease(f);
+    done = i; L = f * S[i].len; tip = pointAt(S[i], L);
+  } else {
+    done = i + 1;
+    a = [sx1(S[i]), sy1(S[i])];
+    var end = i + 1 < n ? state.t0[i + 1] : 1;
+    b = i + 1 < n ? [sx0(S[i + 1]), sy0(S[i + 1])] : [W * 0.9, H + 60 * state.k];
+    f = end > state.t1[i] ? ease(clamp((T - state.t1[i]) / (end - state.t1[i]), 0, 1)) : 1;
+    tip = [lerp(a[0], b[0], f), lerp(a[1], b[1], f)];
+    var dist = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+    lift = i + 1 < n ? Math.sin(Math.PI * f) * clamp(dist / (60 * state.k), 0.25, 1) : f;
+  }
+  advanceMask(done, L);
+  var m = state.mask;
+  if (T > FADE_START) {
+    var c2 = state.m2ctx;
+    c2.globalCompositeOperation = 'copy'; c2.globalAlpha = 1; c2.drawImage(state.mask, 0, 0);
+    c2.globalCompositeOperation = 'source-over'; c2.globalAlpha = ease((T - FADE_START) / (1 - FADE_START)); c2.fillStyle = '#000'; c2.fillRect(0, 0, W, H);
+    m = state.mask2;
+  }
+  var r = state.rctx;
+  r.globalCompositeOperation = 'copy'; r.drawImage(state.layer, 0, 0);
+  r.globalCompositeOperation = 'destination-in'; r.drawImage(m, 0, 0);
+  vctx.drawImage(state.reveal, 0, 0);
+  if (settings.showTool) {
+    var wob = Math.sin(T * settings.duration * 9) * 2.2 + Math.sin(T * settings.duration * 3.1) * 1.4;
+    drawTool(vctx, tip[0], tip[1], lift, tool(), state.k, wob);
+  }
+}
+function drawFinal() {
+  var c = mkCanvas(state.W, state.H), x = c.getContext('2d');
+  x.drawImage(state.paper, 0, 0); x.drawImage(state.layer, 0, 0);
+  return c;
+}
+
+/* ---- UI sync ---- */
+function fmt(sec) { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2); }
+function syncTransport() {
+  $('seek').value = Math.round(state.T * 1000);
+  $('clock').textContent = fmt(state.T * settings.duration) + ' / ' + fmt(settings.duration);
+  var playing = state.playing;
+  $('icoPlay').hidden = playing; $('icoPause').hidden = !playing;
+  $('play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  var showBig = !playing && !rec && !state.busy && state.strokes.length > 0 && (state.T >= 1 || state.T <= 0);
+  ['play', 'restart', 'seek'].forEach(function (id) { if (!rec) $(id).disabled = !state.strokes.length; });
+  $('bigplay').hidden = !showBig;
+  $('bigplayText').textContent = state.played ? 'Draw it again' : 'Watch it draw';
+}
+function syncLabels() {
+  var t = tool();
+  $('detailOut').textContent = settings.detail;
+  $('weightOut').textContent = t.grades[settings.weight];
+  $('durationOut').textContent = settings.duration + ' s';
+  $('showTool').parentNode.lastChild.nodeValue = t.check;
+}
+function syncMeta() {
+  var n = state.strokes.length;
+  if (!n) { $('meta').textContent = ''; return; }
+  var total = 0; state.strokes.forEach(function (s) { total += s.len; });
+  var metres = total / Math.max(state.W, state.H) * A4_LONG_M;
+  var lineTxt = metres >= 1 ? metres.toFixed(1) + ' m' : Math.round(metres * 100) + ' cm';
+  $('meta').textContent = n.toLocaleString() + ' strokes · the pencil travels about ' + lineTxt + ' on an A4 sheet · ' + state.W + ' × ' + state.H + ' px';
+}
+function setBusy(text) {
+  state.busy = !!text;
+  $('veil').hidden = !text; if (text) $('veilText').textContent = text;
+  $('makeVideo').disabled = !!text || !canRecord;
+  syncTransport();
+}
+function subjectNote(text) { var m = $('subjectMsg'); m.hidden = !text; m.textContent = text || ''; }
+function photoError(text) { var m = $('photoMsg'); m.hidden = !text; m.textContent = text || ''; }
+function exportMsg(text, bad) { var m = $('exportMsg'); m.hidden = !text; m.textContent = text || ''; m.className = bad ? 'msg bad' : 'msg'; }
+
+/* ---- playback loop ---- */
+function tick(ts) {
+  raf = 0;
+  if (rec) recTick(ts);
+  else if (state.playing) {
+    var dt = Math.min(0.1, (ts - state.last) / 1000); state.last = ts;
+    state.T = Math.min(1, state.T + dt / settings.duration);
+    render();
+    if (state.T >= 1) { state.playing = false; state.played = true; }
+    syncTransport();
+  }
+  if ((state.playing || rec) && !raf) raf = requestAnimationFrame(tick);
+}
+function play() {
+  if (rec || state.busy || !state.strokes.length) return;
+  if (state.T >= 1) state.T = 0;
+  state.playing = true; state.last = performance.now();
+  syncTransport();
+  if (!raf) raf = requestAnimationFrame(tick);
+}
+function pause() { state.playing = false; syncTransport(); }
+function seekTo(T) { state.T = clamp(T, 0, 1); render(); syncTransport(); }
+
+/* ---- processing ---- */
+function updateThumb() {
+  var th = $('thumb'), x = th.getContext('2d'), s = state.src;
+  var sc = Math.max(th.width / s.width, th.height / s.height), w = s.width * sc, h = s.height * sc;
+  x.clearRect(0, 0, th.width, th.height);
+  x.drawImage(s, (th.width - w) / 2, (th.height - h) / 2, w, h);
+  $('photoName').textContent = state.name;
+  $('photoTag').hidden = !state.isSample;
+}
+function even(v) { v = Math.max(2, Math.round(v)); return v % 2 ? v + 1 : v; }
+
+async function process(autoplay) {
+  if (!state.src) return;
+  var job = ++state.job;
+  pause();
+  var mask = null, note = '';
+  if (settings.subject === 'person') {
+    if (!state.personMask && !finder.down) {
+      setBusy(finder.inst ? 'Finding the person…' : 'Loading the person finder (about 6 MB, first time only)…');
+      await nextPaint();
+      try { state.personMask = await findPerson(state.src); }
+      catch (e) { finder.down = true; }
+      if (job !== state.job) return;
+    }
+    mask = state.personMask;
+    if (!mask) note = 'The person finder could not load in this browser, so the whole photo is sketched.';
+  }
+  setBusy('Sketching…');
+  await nextPaint();
+  if (job !== state.job) return;
+  var res;
+  try {
+    res = analyse(state.src, mask, { detail: settings.detail / 100, shade: settings.shade, grade: settings.weight, order: settings.order, tool: tool() });
+  } catch (e) { setBusy(''); photoError('This photo could not be read. Try a different file.'); return; }
+  if (res.noPerson) note = 'No person was found in this photo, so the whole photo is sketched.';
+  subjectNote(note);
+  if (job !== state.job) return;
+  state.W = res.W; state.H = res.H; state.k = Math.max(res.W, res.H) / 1280;
+  if (view.width !== res.W || view.height !== res.H) { view.width = res.W; view.height = res.H; }
+  state.D = res.D; state.strokes = res.strokes; state.outlines = res.outlines;
+  var tl = buildTimeline(res.strokes); state.t0 = tl.t0; state.t1 = tl.t1;
+  rebuildMaterials();
+  discardClip();
+  photoError(res.strokes.length ? '' : 'There is almost nothing to draw in this photo. Choose Light shading or a darker pencil, or try a photo with stronger contrast.');
+  state.T = (autoplay && !reduceMotion && res.strokes.length) ? 0 : 1;
+  state.played = false;
+  setBusy('');
+  render(); syncMeta(); syncTransport();
+  if (autoplay && !reduceMotion && res.strokes.length) play();
+}
+var reTimer = 0;
+function reprocessSoon() { clearTimeout(reTimer); reTimer = setTimeout(function () { process(false); }, 160); }
+
+function decodeViaImg(file) {
+  return new Promise(function (resolve, reject) {
+    var url = URL.createObjectURL(file), im = new Image();
+    im.onload = function () { URL.revokeObjectURL(url); resolve(im); };
+    im.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode')); };
+    im.src = url;
+  });
+}
+async function loadFile(file) {
+  if (!file || rec) return;
+  if (file.type && file.type.indexOf('image/') !== 0) { photoError('That file is not an image. Choose a JPG, PNG or WebP photo.'); return; }
+  photoError(''); exportMsg('');
+  state.job++; pause();
+  setBusy('Opening the photo…');
+  await nextPaint();
+  var bmp = null;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (e) { try { bmp = await decodeViaImg(file); } catch (e2) { bmp = null; } }
+  var bw = bmp ? (bmp.naturalWidth || bmp.width) : 0, bh = bmp ? (bmp.naturalHeight || bmp.height) : 0;
+  if (!bmp || !bw || !bh) { setBusy(''); photoError('This browser cannot open that file. Save the photo as a JPG or PNG and try again.'); return; }
+  if (Math.min(bw, bh) < 48) { setBusy(''); photoError('That image is too small to trace. Use a photo at least 48 pixels on each side.'); return; }
+  var sc = Math.min(1, 1600 / Math.max(bw, bh));
+  var c = mkCanvas(Math.max(1, Math.round(bw * sc)), Math.max(1, Math.round(bh * sc))), x = c.getContext('2d');
+  x.imageSmoothingQuality = 'high'; x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  try { x.drawImage(bmp, 0, 0, c.width, c.height); }
+  catch (e) { setBusy(''); photoError('This photo is too large for this device to open. Try a smaller copy.'); return; }
+  if (bmp.close) bmp.close();
+  state.src = c; state.isSample = false; state.personMask = null;
+  state.name = file.name && file.name.length > 40 ? file.name.slice(0, 37) + '…' : (file.name || 'Pasted photo');
+  updateThumb();
+  await process(true);
+}
+
+/* ---- video ---- */
+var canRecord = typeof MediaRecorder !== 'undefined' && typeof view.captureStream === 'function';
+function pickMime() {
+  var list = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  for (var i = 0; i < list.length; i++) { try { if (MediaRecorder.isTypeSupported(list[i])) return list[i]; } catch (e) { /* keep looking */ } }
+  return '';
+}
+function discardClip() {
+  if (clipUrl) { try { URL.revokeObjectURL(clipUrl); } catch (e) { /* ignore */ } }
+  clipUrl = ''; clipBlob = null;
+  $('clip').removeAttribute('src'); try { $('clip').load(); } catch (e) { /* ignore */ }
+  $('exportDone').hidden = true;
+}
+function setExportMode(mode) {
+  $('exportIdle').hidden = mode === 'busy';
+  $('exportBusy').hidden = mode !== 'busy';
+  Array.prototype.forEach.call(document.querySelectorAll('#rail > .group'), function (g) { if (g.id !== 'exportGroup') g.inert = mode === 'busy'; });
+  ['play', 'restart', 'seek'].forEach(function (id) { $(id).disabled = mode === 'busy'; });
+  $('makeVideo').textContent = '';
+  $('makeVideo').insertAdjacentHTML('afterbegin', '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3.5" width="9" height="9" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 7l4-2.2v6.4l-4-2.2z" fill="currentColor"/></svg>');
+  $('makeVideo').appendChild(document.createTextNode(clipBlob ? 'Make the video again' : 'Make the video'));
+}
+function startRecording() {
+  if (rec || state.busy || !state.strokes.length) return;
+  if (!canRecord) { exportMsg('This browser cannot record video. Open the page in a current version of Chrome, Edge, Firefox or Safari.', true); return; }
+  var mime = pickMime(), stream, recorder;
+  try {
+    stream = view.captureStream(30);
+    recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 7000000 } : { videoBitsPerSecond: 7000000 });
+  } catch (e) { exportMsg('Recording could not start in this browser.', true); return; }
+  pause(); discardClip(); exportMsg('');
+  var chunks = [];
+  rec = { recorder: recorder, stream: stream, start: 0, lead: 450, tail: 1500, dur: settings.duration * 1000, cancelled: false, failed: false };
+  var session = rec;
+  recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onerror = function () { session.failed = true; try { recorder.stop(); } catch (e) { /* already stopped */ } };
+  recorder.onstop = function () {
+    stream.getTracks().forEach(function (t) { t.stop(); });
+    if (rec === session) rec = null;
+    state.T = 1; state.played = true; render();
+    var type = (recorder.mimeType || mime || 'video/webm').split(';')[0];
+    if (session.cancelled) { setExportMode('idle'); exportMsg(session.reason || 'Recording cancelled.'); syncTransport(); return; }
+    var blob = new Blob(chunks, { type: type });
+    if (session.failed || !blob.size) { setExportMode('idle'); exportMsg('The recording failed. Try again with a shorter drawing time.', true); syncTransport(); return; }
+    clipBlob = blob; clipExt = type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+    clipUrl = URL.createObjectURL(blob);
+    var v = $('clip'); v.src = clipUrl;
+    $('exportDone').hidden = false;
+    $('saveVideo').hidden = !canSave();
+    setExportMode('idle');
+    exportMsg(canSave() ? 'The video is ready (' + (blob.size / 1048576).toFixed(1) + ' MB, ' + clipExt.toUpperCase() + ').' : 'The video is ready to watch. Saving files is not available in this view.');
+    syncTransport();
+  };
+  state.T = 0; render();
+  setExportMode('busy'); $('recBar').style.width = '0%'; $('recText').textContent = 'Recording 0%';
+  syncTransport();
+  try { recorder.start(250); } catch (e) { rec = null; setExportMode('idle'); exportMsg('Recording could not start in this browser.', true); syncTransport(); return; }
+  if (!raf) raf = requestAnimationFrame(tick);
+}
+function recTick(ts) {
+  var r = rec;
+  if (!r.start) r.start = ts;
+  var e = ts - r.start, total = r.lead + r.dur + r.tail;
+  state.T = e < r.lead ? 0 : e < r.lead + r.dur ? (e - r.lead) / r.dur : 1;
+  render();
+  var pct = Math.min(100, Math.round(e / total * 100));
+  $('recBar').style.width = pct + '%'; $('recText').textContent = 'Recording ' + pct + '%';
+  $('seek').value = Math.round(state.T * 1000);
+  $('clock').textContent = fmt(state.T * settings.duration) + ' / ' + fmt(settings.duration);
+  if (e >= total) { try { r.recorder.stop(); } catch (err) { rec = null; setExportMode('idle'); } }
+}
+function cancelRecording(reason) {
+  if (!rec) return;
+  rec.cancelled = true; rec.reason = reason || '';
+  try { rec.recorder.stop(); } catch (e) { rec = null; setExportMode('idle'); syncTransport(); }
+}
+function saveError(err) {
+  var code = err && err.code;
+  if (code === 'declined') return 'Not saved.';
+  if (code === 'rate_limited') return 'A save prompt is already open. Answer it, then try again.';
+  if (code === 'too_large') return 'This file is too large to save here. Shorten the drawing time and make the video again.';
+  if (code === 'rejected_extension' || code === 'extension_not_enabled') return 'This file type cannot be saved in this view.';
+  return 'Saving is not available in this view.';
+}
+function baseName() {
+  var n = state.isSample ? 'sample-portrait' : state.name.replace(/\.[a-z0-9]+$/i, '').replace(/[^a-z0-9\-_ ]+/gi, '').trim().replace(/\s+/g, '-').slice(0, 40);
+  return (n || 'photo') + '-pencil-trace';
+}
+
+/* ---- wiring ---- */
+$('detail').value = settings.detail; $('weight').value = settings.weight; $('duration').value = settings.duration;
+$('showTool').checked = settings.showTool;
+Array.prototype.forEach.call(document.querySelectorAll('input[name=shade]'), function (r) { r.checked = +r.value === settings.shade; });
+Array.prototype.forEach.call(document.querySelectorAll('input[name=order]'), function (r) { r.checked = r.value === settings.order; });
+Array.prototype.forEach.call(document.querySelectorAll('input[name=subject]'), function (r) { r.checked = r.value === settings.subject; });
+Array.prototype.forEach.call(document.querySelectorAll('input[name=tool]'), function (r) { r.checked = r.value === settings.tool; });
+syncLabels();
+
+$('file').addEventListener('change', function () { var f = this.files && this.files[0]; this.value = ''; loadFile(f); });
+$('detail').addEventListener('input', function () { settings.detail = +this.value; syncLabels(); persist(); reprocessSoon(); });
+$('weight').addEventListener('input', function () { settings.weight = +this.value; syncLabels(); persist(); reprocessSoon(); });
+$('duration').addEventListener('input', function () { settings.duration = +this.value; syncLabels(); persist(); syncTransport(); });
+$('showTool').addEventListener('change', function () { settings.showTool = this.checked; persist(); render(); });
+document.addEventListener('change', function (e) {
+  var t = e.target; if (!t || t.type !== 'radio') return;
+  if (t.name === 'shade') { settings.shade = +t.value; persist(); reprocessSoon(); }
+  else if (t.name === 'subject') { settings.subject = t.value; persist(); reprocessSoon(); }
+  else if (t.name === 'order') { settings.order = t.value; persist(); reprocessSoon(); }
+  else if (t.name === 'tool') { settings.tool = t.value; persist(); syncLabels(); reprocessSoon(); }
+});
+$('play').addEventListener('click', function () { if (state.playing) pause(); else play(); });
+$('bigplay').addEventListener('click', function () { state.T = 0; play(); });
+$('restart').addEventListener('click', function () { if (rec) return; state.T = 0; render(); play(); });
+$('seek').addEventListener('input', function () { if (rec) return; state.playing = false; seekTo(+this.value / 1000); });
+$('makeVideo').addEventListener('click', startRecording);
+$('cancelRec').addEventListener('click', function () { cancelRecording('Recording cancelled.'); });
+$('saveVideo').addEventListener('click', function () {
+  if (!canSave() || !clipBlob) return;
+  var btn = this; btn.disabled = true;
+  saveFile(baseName() + '.' + clipExt, clipBlob)
+    .then(function () { exportMsg('Video saved.'); })
+    .catch(function (err) { var c = err && err.code; exportMsg(saveError(err), c !== 'declined'); })
+    .then(function () { btn.disabled = false; });
+});
+$('saveImage').addEventListener('click', function () {
+  if (!canSave() || !state.layer || state.busy) return;
+  var btn = this; btn.disabled = true;
+  drawFinal().toBlob(function (blob) {
+    if (!blob) { btn.disabled = false; exportMsg('The drawing could not be turned into an image.', true); return; }
+    saveFile(baseName() + '.png', blob)
+      .then(function () { exportMsg('Drawing saved.'); })
+      .catch(function (err) { var c = err && err.code; exportMsg(saveError(err), c !== 'declined'); })
+      .then(function () { btn.disabled = false; });
+  }, 'image/png');
+});
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden && rec) cancelRecording('Recording stopped because the page was hidden. Keep it in view while the video is made.');
+  if (document.hidden && state.playing) pause();
+});
+document.addEventListener('keydown', function (e) {
+  if (e.code !== 'Space' || e.repeat || rec) return;
+  var t = e.target, tag = t && t.tagName;
+  if (tag === 'INPUT' || tag === 'BUTTON' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'VIDEO' || tag === 'LABEL') return;
+  e.preventDefault(); if (state.playing) pause(); else play();
+});
+/* drag, drop and paste */
+var dragDepth = 0, mat = $('mat');
+function hasFiles(e) { var t = e.dataTransfer && e.dataTransfer.types; return !!t && Array.prototype.indexOf.call(t, 'Files') >= 0; }
+window.addEventListener('dragenter', function (e) { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; mat.classList.add('over'); });
+window.addEventListener('dragover', function (e) { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener('dragleave', function (e) { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) mat.classList.remove('over'); });
+window.addEventListener('drop', function (e) {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; mat.classList.remove('over');
+  var f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) loadFile(f);
+});
+window.addEventListener('paste', function (e) {
+  var items = e.clipboardData && e.clipboardData.items; if (!items) return;
+  for (var i = 0; i < items.length; i++) if (items[i].kind === 'file' && items[i].type.indexOf('image/') === 0) { var f = items[i].getAsFile(); if (f) { e.preventDefault(); loadFile(f); } return; }
+});
+$('clip').addEventListener('error', function () { if (clipBlob) this.hidden = true; });
+$('clip').addEventListener('loadeddata', function () { this.hidden = false; });
+
+if (!canRecord) {
+  $('makeVideo').disabled = true;
+  $('exportHint').textContent = 'This browser cannot record video. Open the page in a current version of Chrome, Edge, Firefox or Safari to make one.';
+}
+if (standalone) $('saveImage').hidden = false;
+if (!standalone) {
+  window.claude.use('downloads').then(function (d) {
+    downloads = d || null;
+    $('saveImage').hidden = !canSave();
+    if (clipBlob) $('saveVideo').hidden = !canSave();
+  }).catch(function () { downloads = null; });
+}
+
+/* open on the sample, already sketched */
+state.src = makeSample(); state.personMask = makeSampleMask(); state.isSample = true; state.name = 'Sample portrait';
+updateThumb();
+process(false);
+})();
+</script>
+</body>
+</html>
